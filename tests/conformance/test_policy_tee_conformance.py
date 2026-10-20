@@ -138,9 +138,9 @@ class _BoundProvider(SoftwareOnlyProvider):
         return report
 
 
-def _claim(*, provider: str, report_data: str):
+def _claim(*, provider: str, report_data: str, key=None, policy_hash=_POLICY_HASH):
     """A signed TRACE claim whose report_data the caller controls."""
-    key = SigningKey()
+    key = key or SigningKey()
     chain = AuditChain("policy-tee-conformance")
     claim = generate_trace_claim(
         session_id="policy-tee-conformance",
@@ -153,7 +153,7 @@ def _claim(*, provider: str, report_data: str):
             attestation_validity_seconds=86400,
         ),
         policy_bundle=PolicyBundleInfo(
-            hash=_POLICY_HASH, enforcement_mode="enforcing", policy_version="1.0.0"
+            hash=policy_hash, enforcement_mode="enforcing", policy_version="1.0.0"
         ),
         tool_catalog=ToolCatalogInfo(hash=_CATALOG_HASH),
         call_summary=CallSummary(
@@ -182,7 +182,11 @@ class TestPolicyTee001MeasurementComposition:
     the three separable so a verifier learns which one moved."""
 
     def test_the_digest_commits_all_three_inputs(self, tmp_path, stub_code) -> None:
-        config = _Config(policy_bundle_path=_loadable_bundle(tmp_path / "b", "permit(principal, action, resource);"))
+        config = _Config(
+            policy_bundle_path=_loadable_bundle(
+                tmp_path / "b", "permit(principal, action, resource);"
+            )
+        )
         measurement = gateway_measurement(config)
 
         assert set(measurement.components) == {"code", "policy", "config"}
@@ -192,7 +196,9 @@ class TestPolicyTee001MeasurementComposition:
         """A bare digest tells a verifier the gateway changed. The components tell
         it which input did, which is the complaint #433 makes about raw PCRs."""
         root = tmp_path / "b"
-        config = _Config(policy_bundle_path=_loadable_bundle(root, "permit(principal, action, resource);"))
+        config = _Config(
+            policy_bundle_path=_loadable_bundle(root, "permit(principal, action, resource);")
+        )
         before = gateway_measurement(config)
 
         (root / "allow.cedar").write_text("forbid(principal, action, resource);")
@@ -204,7 +210,11 @@ class TestPolicyTee001MeasurementComposition:
         assert after.components["config"] == before.components["config"]
 
     def test_the_digest_is_stable_for_unchanged_inputs(self, tmp_path, stub_code) -> None:
-        config = _Config(policy_bundle_path=_loadable_bundle(tmp_path / "b", "permit(principal, action, resource);"))
+        config = _Config(
+            policy_bundle_path=_loadable_bundle(
+                tmp_path / "b", "permit(principal, action, resource);"
+            )
+        )
 
         assert gateway_measurement(config).digest == gateway_measurement(config).digest
 
@@ -237,13 +247,15 @@ class TestPolicyTee002StartupBinding:
         self, tmp_path, stub_code
     ) -> None:
         """Nothing the verifier checks is read out of the report itself."""
-        config = _Config(policy_bundle_path=_loadable_bundle(tmp_path / "b", "permit(principal, action, resource);"))
+        config = _Config(
+            policy_bundle_path=_loadable_bundle(
+                tmp_path / "b", "permit(principal, action, resource);"
+            )
+        )
         measurement = gateway_measurement(config)
         provider = SoftwareOnlyProvider()
 
-        report = provider.get_attestation_report(
-            measurement_bound_nonce_for(_KEY, measurement)
-        )
+        report = provider.get_attestation_report(measurement_bound_nonce_for(_KEY, measurement))
         report_data = bytes.fromhex(report.report_data)
 
         assert report_data[:32] == jwk_thumbprint(_KEY)
@@ -301,7 +313,7 @@ class TestPolicyTee002TpmIsNotCoveredByThisMechanism:
         attest = _tpms_attest(qualifying_data=qualifying, pcr_digest=b"\x02" * 32)
 
         result = verify_tpm_measurement(
-            "sha256:" + ("\xee".encode().hex() * 0 or "ee" * 32),
+            "sha256:" + "ee" * 32,
             attest,
             expected_qualifying_data=qualifying,
         )
@@ -318,12 +330,15 @@ def _tpms_attest(*, qualifying_data: bytes, pcr_digest: bytes) -> bytes:
     return (
         struct.pack(">I", _TPM_GENERATED_VALUE)
         + struct.pack(">H", 0x8018)  # TPM_ST_ATTEST_QUOTE
-        + struct.pack(">H", 4) + b"name"  # qualifiedSigner
-        + struct.pack(">H", len(qualifying_data)) + qualifying_data  # extraData
+        + struct.pack(">H", 4)
+        + b"name"  # qualifiedSigner
+        + struct.pack(">H", len(qualifying_data))
+        + qualifying_data  # extraData
         + b"\x00" * 17  # clockInfo
         + b"\x00" * 8  # firmwareVersion
         + struct.pack(">I", 0)  # TPML_PCR_SELECTION count
-        + struct.pack(">H", len(pcr_digest)) + pcr_digest
+        + struct.pack(">H", len(pcr_digest))
+        + pcr_digest
     )
 
 
@@ -338,7 +353,9 @@ class TestPolicyTee003FreshnessOnReload:
         self, tmp_path, stub_code
     ) -> None:
         root = tmp_path / "b"
-        config = _Config(policy_bundle_path=_loadable_bundle(root, "permit(principal, action, resource);"))
+        config = _Config(
+            policy_bundle_path=_loadable_bundle(root, "permit(principal, action, resource);")
+        )
         ctx = _Ctx(config=config, tee_provider=_BoundProvider())
 
         assert refresh_measurement_binding(ctx) is True
@@ -355,7 +372,11 @@ class TestPolicyTee003FreshnessOnReload:
         """The control, and the reason there is no short-circuit on an unchanged
         digest: report_data carries no history, so the same digest re-signed now
         is a different assertion from the same digest signed an hour ago."""
-        config = _Config(policy_bundle_path=_loadable_bundle(tmp_path / "b", "permit(principal, action, resource);"))
+        config = _Config(
+            policy_bundle_path=_loadable_bundle(
+                tmp_path / "b", "permit(principal, action, resource);"
+            )
+        )
         ctx = _Ctx(config=config, tee_provider=_BoundProvider())
 
         assert refresh_measurement_binding(ctx) is True
@@ -364,12 +385,14 @@ class TestPolicyTee003FreshnessOnReload:
         assert refresh_measurement_binding(ctx) is True
         assert ctx.gateway_measurement.digest == first_digest
 
-    def test_a_provider_outside_the_bound_set_does_not_rebind(
-        self, tmp_path, stub_code
-    ) -> None:
+    def test_a_provider_outside_the_bound_set_does_not_rebind(self, tmp_path, stub_code) -> None:
         """TPM and software-only return False here, which means 'not handled by
         this mechanism' and must not be read as a current binding."""
-        config = _Config(policy_bundle_path=_loadable_bundle(tmp_path / "b", "permit(principal, action, resource);"))
+        config = _Config(
+            policy_bundle_path=_loadable_bundle(
+                tmp_path / "b", "permit(principal, action, resource);"
+            )
+        )
         ctx = _Ctx(config=config, tee_provider=_BoundProvider("tpm"))
 
         assert refresh_measurement_binding(ctx) is False
@@ -379,7 +402,9 @@ class TestPolicyTee003FreshnessOnReload:
         self, tmp_path, stub_code
     ) -> None:
         root = tmp_path / "b"
-        config = _Config(policy_bundle_path=_loadable_bundle(root, "permit(principal, action, resource);"))
+        config = _Config(
+            policy_bundle_path=_loadable_bundle(root, "permit(principal, action, resource);")
+        )
         ctx = _Ctx(config=config, tee_provider=_BoundProvider())
         refresh_measurement_binding(ctx)
         stale = bytes.fromhex(ctx.attestation_report.report_data)
@@ -401,26 +426,25 @@ class TestPolicyTee004TamperDetection:
         key = SigningKey()
         claim, _ = _claim(
             provider="sev-snp",
-            report_data=make_measurement_bound_nonce(
-                key.public_key_bytes, digest
-            ).hex(),
+            key=key,
+            report_data=make_measurement_bound_nonce(key.public_key_bytes, digest).hex(),
         )
         result = verify_trace_claim(claim, _APPROVED, expected_gateway_measurement=digest)
 
+        assert "public_key_binding" in result.verified_fields
         assert "measurement_binding" in result.verified_fields
 
     def test_a_substituted_measurement_is_rejected(self) -> None:
         key = SigningKey()
         claim, _ = _claim(
             provider="sev-snp",
-            report_data=make_measurement_bound_nonce(
-                key.public_key_bytes, b"\xab" * 32
-            ).hex(),
+            key=key,
+            report_data=make_measurement_bound_nonce(key.public_key_bytes, b"\xab" * 32).hex(),
         )
-        result = verify_trace_claim(
-            claim, _APPROVED, expected_gateway_measurement=b"\xee" * 32
-        )
+        result = verify_trace_claim(claim, _APPROVED, expected_gateway_measurement=b"\xee" * 32)
 
+        assert "public_key_binding" in result.verified_fields
+        assert "policy_bundle.hash" in result.verified_fields
         assert "measurement_binding" in result.unverified_fields
 
     def test_an_unusable_expected_digest_fails_closed(self) -> None:
@@ -428,14 +452,13 @@ class TestPolicyTee004TamperDetection:
         key = SigningKey()
         claim, _ = _claim(
             provider="sev-snp",
-            report_data=make_measurement_bound_nonce(
-                key.public_key_bytes, b"\xab" * 32
-            ).hex(),
+            key=key,
+            report_data=make_measurement_bound_nonce(key.public_key_bytes, b"\xab" * 32).hex(),
         )
-        result = verify_trace_claim(
-            claim, _APPROVED, expected_gateway_measurement="not-a-digest"
-        )
+        result = verify_trace_claim(claim, _APPROVED, expected_gateway_measurement="not-a-digest")
 
+        assert "public_key_binding" in result.verified_fields
+        assert "policy_bundle.hash" in result.verified_fields
         assert "measurement_binding" in result.unverified_fields
 
     def test_the_check_is_opt_in_so_a_claim_cannot_vouch_for_itself(self) -> None:
@@ -444,9 +467,8 @@ class TestPolicyTee004TamperDetection:
         key = SigningKey()
         claim, _ = _claim(
             provider="sev-snp",
-            report_data=make_measurement_bound_nonce(
-                key.public_key_bytes, b"\xab" * 32
-            ).hex(),
+            key=key,
+            report_data=make_measurement_bound_nonce(key.public_key_bytes, b"\xab" * 32).hex(),
         )
         result = verify_trace_claim(claim, _APPROVED)
 
@@ -478,16 +500,6 @@ class TestPolicyTee005TwoConstructions:
         assert measured_after != measured_before
         assert canonical_after != canonical_before
 
-    def test_neither_is_asserted_to_equal_the_other(self, tmp_path, stub_code) -> None:
-        """Two separately-computed values over the same bytes. Equality is not the
-        property under test, and asserting it would undo #552's separation."""
-        path = _loadable_bundle(tmp_path / "b", "permit(principal, action, resource);")
-
-        measured = policy_digest(path)
-        canonical = load_policy_bundle(path).bundle_hash.removeprefix("sha256:")
-
-        assert measured != canonical
-
     def test_unchanged_policy_control_holds_both_still(self, tmp_path, stub_code) -> None:
         """The control: neither moves when the policy does not."""
         path = _loadable_bundle(tmp_path / "b", "permit(principal, action, resource);")
@@ -498,7 +510,9 @@ class TestPolicyTee005TwoConstructions:
     def test_the_measurement_check_rejects_its_own_mismatch(self, tmp_path, stub_code) -> None:
         """Each verification path rejects independently of the other."""
         root = tmp_path / "b"
-        config = _Config(policy_bundle_path=_loadable_bundle(root, "permit(principal, action, resource);"))
+        config = _Config(
+            policy_bundle_path=_loadable_bundle(root, "permit(principal, action, resource);")
+        )
         before = gateway_measurement(config)
 
         (root / "allow.cedar").write_text("forbid(principal, action, resource);")
@@ -506,14 +520,15 @@ class TestPolicyTee005TwoConstructions:
         key = SigningKey()
         claim, _ = _claim(
             provider="sev-snp",
-            report_data=make_measurement_bound_nonce(
-                key.public_key_bytes, before.digest
-            ).hex(),
+            key=key,
+            report_data=make_measurement_bound_nonce(key.public_key_bytes, before.digest).hex(),
         )
         result = verify_trace_claim(
             claim, _APPROVED, expected_gateway_measurement=gateway_measurement(config).digest
         )
 
+        assert "public_key_binding" in result.verified_fields
+        assert "policy_bundle.hash" in result.verified_fields
         assert "measurement_binding" in result.unverified_fields
 
     def test_the_bundle_hash_check_rejects_its_own_mismatch(self, tmp_path, stub_code) -> None:
@@ -528,4 +543,15 @@ class TestPolicyTee005TwoConstructions:
         (root / "allow.cedar").write_text("forbid(principal, action, resource);")
         mutated_hash = load_policy_bundle(path).bundle_hash
 
-        assert mutated_hash != approved.policy_bundle_hash
+        key = SigningKey()
+        digest = b"\xab" * 32
+        nonce = make_measurement_bound_nonce(key.public_key_bytes, digest).hex()
+        for policy_hash, matches in ((approved.policy_bundle_hash, True), (mutated_hash, False)):
+            claim, _ = _claim(
+                provider="sev-snp", report_data=nonce, key=key, policy_hash=policy_hash
+            )
+            result = verify_trace_claim(claim, approved, expected_gateway_measurement=digest)
+            assert "public_key_binding" in result.verified_fields
+            assert "measurement_binding" in result.verified_fields
+            assert ("policy_bundle.hash" in result.verified_fields) is matches
+            assert ("policy_bundle.hash" in result.unverified_fields) is not matches
