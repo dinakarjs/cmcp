@@ -93,11 +93,19 @@ dimensions. Authentication standing is independent of runtime attestation.
 Missing or unverifiable attestation is `not_established`, with its cause
 preserved; it must not be upgraded to a positive claim or collapsed into a
 verified contradiction. Optional policy continues to normal policy evaluation;
-required policy refuses before upstream invocation. Refusal cases assert zero
-upstream calls and include a control that fails if the required boundary is
-bypassed.
+required policy is specified to refuse before upstream invocation. The fixture
+rows declare zero upstream calls and name intended bypass controls; these tests
+check those declarations, not executable boundary enforcement.
 
 | ID | Level | Description | Expected outcome |
 |---|---|---|---|
 | IA-003 | MUST | Authentication succeeds while runtime-attestation evidence is absent, under both optional and required attestation policies. | Authentication stands; optional policy continues without an attestation claim; required policy refuses before upstream invocation and preserves the not-established reason. |
 | IA-004 | MUST | Runtime-attestation evidence is present but cannot be verified, under both optional and required attestation policies. | Authentication stands independently; evidence remains not established with its cause preserved; required policy refuses before upstream invocation. A verified binding contradiction remains a distinct refusal outcome. |
+
+### IA-003/IA-004 evidence boundary
+
+These JSON vectors and their tests check declarative consistency only. The
+`upstream_calls` and `boundary_bypass_control` fields describe intended runtime
+acceptance criteria; this suite does not dispatch a request, observe upstream
+calls, or demonstrate detection of a removed runtime guard. Runtime enforcement
+and independently instrumented bypass controls remain unestablished here.

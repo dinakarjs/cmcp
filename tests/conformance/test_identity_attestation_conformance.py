@@ -1,7 +1,9 @@
 """IA-003/IA-004 conformance vectors for optional and required attestation.
 
-These acceptance fixtures do not add claim fields or define token-exchange wire
+These declarative consistency fixtures do not add claim fields or define token-exchange wire
 format. Runtime attestation remains independent of authentication standing.
+The expected upstream-call counts are fixture declarations, not observations
+of runtime enforcement or proof that bypassing a boundary is detected.
 """
 
 from __future__ import annotations
@@ -44,6 +46,8 @@ def test_optional_and_required_attestation_policies_keep_authentication_independ
     assert len(vector["independent_dimensions"]) == len(DIMENSIONS)
     assert vector["authentication_standing"] == "authenticated"
     assert vector["evidence_condition"] == evidence_condition
+    policies = [case["attestation_policy"] for case in vector["policy_variants"]]
+    assert len(policies) == len(set(policies)), "duplicate attestation policy"
     variants = {case["attestation_policy"]: case for case in vector["policy_variants"]}
     assert set(variants) == {"optional", "required"}
 
@@ -87,3 +91,18 @@ def test_absence_and_unverifiable_evidence_are_not_verified_contradictions() -> 
     assert contradiction["boundary_bypass_control"] == (
         "must_fail_if_attestation_binding_check_is_bypassed"
     )
+
+
+def test_duplicate_policy_variant_is_rejected(monkeypatch):
+    original = _load
+
+    def duplicated(name):
+        vector = original(name)
+        vector["policy_variants"].append(dict(vector["policy_variants"][0]))
+        return vector
+
+    monkeypatch.setitem(globals(), "_load", duplicated)
+    with pytest.raises(AssertionError, match="duplicate attestation policy"):
+        test_optional_and_required_attestation_policies_keep_authentication_independent(
+            "ia-003.json", "absent", "runtime_attestation_absent"
+        )
