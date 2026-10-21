@@ -109,3 +109,26 @@ These JSON vectors and their tests check declarative consistency only. The
 acceptance criteria; this suite does not dispatch a request, observe upstream
 calls, or demonstrate detection of a removed runtime guard. Runtime enforcement
 and independently instrumented bypass controls remain unestablished here.
+
+## Experimental identity/attestation execution fixture (#568)
+
+`test_identity_attestation_execution.py` exercises a test-local boundary for
+IA-003/004 and a verified binding contradiction. It verifies synthetic Ed25519
+statements and observes an upstream callable, with optional/required policies
+and permitting/denying policy premises. A valid matching statement provides the
+positive continuation control. Missing and invalid-signature evidence remain
+not established; an authenticated wrong-workload statement is contradictory.
+
+This is an executable fixture model, not production gateway enforcement or a
+hardware-attestation verifier. Authentication, signer trust and policy decisions
+are supplied premises. The input domain is the statements constructed by this
+module; it is not a general untrusted-input parser. It adds no wire fields or
+claim representation. The JSON vectors remain declarative evidence.
+
+The acceptance source is the
+[#568 maintainer ruling](https://github.com/agentrust-io/cmcp/issues/568#issuecomment-5807420535).
+Production integration, signer authorization, evidence freshness and hardware
+validation remain outside this fixture. Removing required-evidence admission,
+workload comparison, signature verification or policy admission separately makes
+the corresponding tests fail. These mutations establish sensitivity of this
+fixture model only.
