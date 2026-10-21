@@ -415,7 +415,7 @@ def _begin_sealed_start(config: Config) -> _SealedStart:
 def _finish_sealed_start(
     start: _SealedStart, measurement: GatewayMeasurement | None
 ) -> HeldSealedKey:
-    """Unseal the signing key under the measured digest, right after the extend."""
+    """Unseal under the measured digest after the policy bundle is accepted."""
     if measurement is None:
         _fatal_sealed(
             SealedKeyUnavailable(
@@ -466,7 +466,7 @@ def run_startup(config_path: str) -> RuntimeContext:
     3. Generate ephemeral signing keypair and derive the attestation nonce
     3b. Measure the gateway into the TPM NV index and certify it (#432)
     3c. Produce the attestation report
-    4. Load and verify policy bundle hash
+    4. Load and verify policy bundle hash, then provision/unseal the signing key
     5. Load and verify catalog hash
     (Step 6: bind network port - done by the caller after this returns)
     """
@@ -494,7 +494,7 @@ def run_startup(config_path: str) -> RuntimeContext:
     # derived from this key. The key has no dependencies of its own, so producing it
     # earlier is ordering only, not a behaviour change.
     # With sealing (#462) only the public key is known here; the private key is
-    # unsealed after the extend, under the digest the extend committed.
+    # unsealed after policy verification, under the digest the extend committed.
     sealed_start: _SealedStart | None = None
     signing_key: SigningKey | None = None
     if config.attestation.seal_signing_key:
@@ -536,12 +536,6 @@ def run_startup(config_path: str) -> RuntimeContext:
     extend_result, measurement_evidence = _extend_measurement(
         config, tee_provider, measurement, nonce
     )
-
-    sealed_key: HeldSealedKey | None = None
-    if sealed_start is not None:
-        sealed_key = _finish_sealed_start(sealed_start, measurement)
-        signing_key = SigningKey(sealed_key.seed)
-    assert signing_key is not None
 
     try:
         attestation_report = tee_provider.get_attestation_report(nonce)
@@ -725,6 +719,13 @@ def run_startup(config_path: str) -> RuntimeContext:
         sys.exit(1)
 
     logger.info("Policy bundle loaded: hash=%s", policy_bundle.bundle_hash)
+
+    # A rejected first-start bundle must not provision a persistent sealed key.
+    sealed_key: HeldSealedKey | None = None
+    if sealed_start is not None:
+        sealed_key = _finish_sealed_start(sealed_start, measurement)
+        signing_key = SigningKey(sealed_key.seed)
+    assert signing_key is not None
 
     policy_store = PolicyStore(
         bundle=policy_bundle,
