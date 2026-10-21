@@ -26,14 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Defer sealed signing-key provisioning/unseal until policy-bundle verification
+  succeeds, so a refused first-start bundle does not leave a sealed key requiring
+  rotation (#782). Clarify the empty-owner-password access boundary.
+
 - **The test suite could write to the developer's TPM.** With tpm2-pytss
   installed, tests that expected the degraded path opened the default TCTI and
   defined and extended the measurement index on the machine's real TPM. The
   suite now refuses any ESAPI context that is not a simulator.
 - `sink_policy.tool_max_sensitivity` was measured as its printed form, in YAML
   order, so reordering the tools changed the configuration digest. It is now
-  measured as a mapping; the digest changes once for deployments that set
-  `sink_policy`.
+  measured as a mapping; the digest changes once for every deployment, including
+  those using the default `sink_policy`.
 
 ### Security
 
