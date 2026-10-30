@@ -178,11 +178,18 @@ class NRASClient:
         def _no_nonfinite(token: str) -> Any:
             raise ValueError(f"non-finite JSON constant: {token}")
 
+        def _finite_float(token: str) -> float:
+            value = float(token)
+            if not math.isfinite(value):
+                raise ValueError(f"non-finite JSON number: {token}")
+            return value
+
         try:
             parsed = json.loads(
                 response.text,
                 object_pairs_hook=_no_duplicate_keys,
                 parse_constant=_no_nonfinite,
+                parse_float=_finite_float,
             )
         except Exception as exc:
             raise NRASError(f"NRAS response is not valid JSON: {exc}") from exc
