@@ -99,6 +99,8 @@ def _extract_extra_data(quote_msg: bytes) -> bytes:
         attest = quote_msg[2 : 2 + size]
     else:
         raise ValueError("TPMS_ATTEST magic not found")
+    if len(attest) < 6 or struct.unpack_from(">H", attest, 4)[0] != 0x8018:
+        raise ValueError("TPMS_ATTEST type must be TPM_ST_ATTEST_QUOTE")
     offset = 6  # magic(4) + type(2)
     if offset + 2 > len(attest):
         raise ValueError("TPMS_ATTEST qualifiedSigner truncated")
@@ -156,7 +158,7 @@ def _ak_from_runtime_data(runtime_data: bytes) -> rsa.RSAPublicKey:
     ak = matches[0]
     if _PRIVATE_JWK_PARAMS.intersection(ak):
         raise ValueError("HCLAkPub must not contain private or symmetric JWK parameters")
-    if "kty" in ak and ak["kty"] != "RSA":
+    if ak.get("kty") != "RSA":
         raise ValueError("HCLAkPub kty must be RSA")
 
     def _b64u(v: Any) -> int:
