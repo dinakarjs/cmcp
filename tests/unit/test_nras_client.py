@@ -383,3 +383,33 @@ def test_gateway_context_nras_appraisal_defaults_none():
     from cmcp_runtime.startup import RuntimeContext
 
     assert RuntimeContext.__dataclass_fields__["nras_appraisal"].default is None
+
+
+@pytest.mark.parametrize("score", ["1e1000", "-1e1000", '{"nested":[1e1000]}', '{"nested":[-1e1000]}'])
+def test_appraise_rejects_exponent_overflow(sw_report, score):
+    client = NRASClient(
+        api_key="synthetic-key",
+        http_client=_mock_text_client(200, '{"status":"affirming","score":' + score + '}'),
+    )
+    with pytest.raises(NRASError, match="non-finite JSON number"):
+        client.appraise(sw_report)
+
+
+@pytest.mark.parametrize("score", ["1e1000", "-1e1000", '{"nested":[1e1000]}', '{"nested":[-1e1000]}'])
+def test_try_appraise_controls_exponent_overflow(sw_report, monkeypatch, score):
+    monkeypatch.setenv("CMCP_NRAS_API_KEY", "synthetic-key")
+    client = NRASClient(
+        api_key="synthetic-key",
+        http_client=_mock_text_client(200, '{"status":"affirming","score":' + score + '}'),
+    )
+    with patch("cmcp_runtime.tee.nras.NRASClient", return_value=client):
+        assert try_appraise(sw_report) is None
+
+
+@pytest.mark.parametrize("score", ["1e308", "-1e308", '{"nested":[1e308,-1e308,0.0]}'])
+def test_appraise_preserves_finite_exponents(sw_report, score):
+    text = '{"status":"affirming","score":' + score + '}'
+    client = NRASClient(api_key="synthetic-key", http_client=_mock_text_client(200, text))
+    result = client.appraise(sw_report)
+    assert result.status == "affirming"
+    assert result.ear_raw == json.loads(text)
