@@ -11,6 +11,13 @@ Its separate `notifications/subscriptions/acknowledged` notification, not a
 JSON-RPC response or the requested task list, supplies the accepted list.
 A task ID is a lookup key, never authority in this fixture profile.
 
+The native listen and acknowledgement must each carry `jsonrpc: "2.0"`.
+CAN-01/action binds the captured request method independently of whether policy
+permits it. Each operand needs one witness: repeated names are not established,
+even if the witnesses agree. Repeated operands also cannot establish joint
+context coverage or composite cancellation authority. These checks preserve
+the distinction between the acknowledged task list and subscriber authority.
+
 ## Evidence and trust premises
 
 `Trust` fixes expected source, client, task, scope, evaluation ID/instant,

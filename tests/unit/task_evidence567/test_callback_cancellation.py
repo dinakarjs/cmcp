@@ -491,3 +491,72 @@ def test_evaluated_unknown_is_accounted_but_never_upgraded_to_authority(world):
     omitted = Submission(population, rows[:-1])
     assert account_slice(omitted)[-1].obligations[0].status == "UNACCOUNTED"
     assert result.authority.disposition == N  # Accounting cannot repair the relation.
+
+
+def test_positive_controls(world):
+    result = cancellation(PROFILE, cancel_evidence(world))
+    assert result.authority.disposition == E
+    assert dict(result.bindings)["action"].disposition == E
+    assert subscription_acceptance(
+        PROFILE, world.listen, world.ack, acknowledgement(world)
+    ).disposition == E
+
+
+@pytest.mark.parametrize("bind_captured_method", [False, True])
+def test_action_must_bind_captured_method(world, bind_captured_method):
+    data = dict(world.request.data, method="tasks/update")
+    changed = replace(world, request=observation("cancel-1", "cancellation_request_observed", data))
+    # Re-sign all witnesses over this request; no stale subject can mask the gap.
+    evidence = cancel_evidence(changed)
+    if bind_captured_method:
+        bindings = tuple((name, signed(
+            "CAN-01/action", changed.request, client=PROFILE.client, value="tasks/update",
+            evaluations=[PROFILE.evaluation], valid_from=123400, valid_until=123500,
+        ) if name == "action" else witness) for name, witness in evidence.bindings)
+        evidence = replace(evidence, bindings=bindings, joint=joint_context(changed, bindings))
+    result = cancellation(PROFILE, evidence)
+    assert result.authority.disposition == N
+    assert result.joint.disposition == E
+    assert dict(result.bindings)["action"].disposition == (E if bind_captured_method else N)
+
+
+@pytest.mark.parametrize("name", OPERANDS)
+@pytest.mark.parametrize("duplicate_kind", ["contradictory", "identical", "missing"])
+@pytest.mark.parametrize("prepend", [False, True])
+def test_duplicate_operand_must_not_last_win(world, name, duplicate_kind, prepend):
+    evidence = cancel_evidence(world)
+    duplicate = signed(
+        f"CAN-01/{name}", world.request, client=PROFILE.client, value="contradictory",
+        evaluations=[PROFILE.evaluation], valid_from=123400, valid_until=123500,
+    )
+    if duplicate_kind == "identical":
+        duplicate = dict(evidence.bindings)[name]
+    elif duplicate_kind == "missing":
+        duplicate = None
+    extra = ((name, duplicate),)
+    result = cancellation(PROFILE, replace(
+        evidence, bindings=(extra + evidence.bindings if prepend else evidence.bindings + extra),
+    ))
+    assert dict(result.bindings)[name].disposition == N
+    assert result.joint.disposition == N
+    assert result.authority.disposition == N
+    assert all(boundary.disposition == E for operand, boundary in result.bindings if operand != name)
+
+
+@pytest.mark.parametrize("message", ["listen", "ack"])
+@pytest.mark.parametrize("version", [None, "1.0", 2, True, "2.0"])
+def test_native_ack_requires_jsonrpc_2(world, message, version):
+    listen_data = dict(world.listen.data)
+    ack_data = dict(world.ack.data)
+    data = listen_data if message == "listen" else ack_data
+    if version is None:
+        del data["jsonrpc"]
+    else:
+        data["jsonrpc"] = version
+    changed = replace(
+        world, listen=observation("listen-1", "request_observed", listen_data),
+        ack=observation("ack-1", "notification_observed", ack_data),
+    )
+    assert subscription_acceptance(
+        PROFILE, changed.listen, changed.ack, acknowledgement(changed)
+    ).disposition == (E if version == "2.0" else N)

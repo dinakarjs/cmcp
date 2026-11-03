@@ -146,7 +146,9 @@ def subscription_acceptance(
     if body is None or body.get("listen") != listen.commitment or body.get("complete") is not True:
         return _result(NOT_ESTABLISHED, "complete_exact_ack_exchange_binding_missing")
     request, notification = listen.data, acknowledged.data
-    if (request.get("method") != "subscriptions/listen"
+    if (request.get("jsonrpc") != "2.0"
+            or notification.get("jsonrpc") != "2.0"
+            or request.get("method") != "subscriptions/listen"
             or "id" not in request
             or notification.get("method") != "notifications/subscriptions/acknowledged"
             or "id" in notification):
@@ -211,9 +213,17 @@ def cancellation(profile: Trust, evidence: Cancellation) -> CancellationResult:
         method=method, task=task, scope=profile.scope, instant=profile.instant,
     )).authority
     authentication = _identity(profile, "cancel-client", evidence.request, evidence.client)
-    values = {"principal": profile.client, "action": "tasks/cancel", "resource": task,
+    values = {"principal": profile.client, "action": method, "resource": task,
               "scope": profile.scope, "instant": profile.instant}
-    supplied = dict(evidence.bindings)
+    supplied: dict[str, Witness | None] = {}
+    repeated = set()
+    for name, witness in evidence.bindings:
+        if name in supplied:
+            repeated.add(name)
+        supplied[name] = witness
+    # Neither ordering nor agreement between repeated witnesses earns uniqueness.
+    for name in repeated:
+        supplied.pop(name)
     bindings = []
     for name in OPERANDS:
         body = _subject(profile, f"CAN-01/{name}", evidence.request, supplied.get(name))
